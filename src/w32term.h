@@ -77,9 +77,17 @@ extern void w32_fullscreen_rect (HWND hwnd, int fsmode, RECT normal,
                                  RECT *rect);
 
 
+/* There are two methods for painting to a window. One is chosen at startup. */
+enum w32_drawing_mode
+{
+  /* GDI, drawing directly to window, creating a new DC for each
+     operation. This is the original mode.*/
+  W32_DRAWING_MODE_GDI = 0,
+  W32_DRAWING_MODE_GDI_BACK_BUFFER =1
+};
+
 /* For each display (currently only one on w32), we have a structure that
    records information about it.  */
-
 struct w32_display_info
 {
   /* Chain of all w32_display_info structures.  */
@@ -217,6 +225,9 @@ struct w32_display_info
 
   /* Value returned by last call of ShowCursor.  */
   int cursor_display_counter;
+
+  /* Drawing method */
+  enum w32_drawing_mode drawing_mode;
 };
 
 /* This is a chain of structures for all the displays currently in use.  */
