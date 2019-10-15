@@ -7361,6 +7361,19 @@ w32_term_init (Lisp_Object display_name, char *xrm_option, char *resource_name)
      the bitmaps.  */
   gui_init_fringe (terminal->rif);
 
+  one_w32_display_info.drawing_mode = W32_DRAWING_MODE_GDI;
+  if (w32_major_version >= 10 && !getenv("W32_EMACS_FORCE_GDI"))
+    {
+      printf( "W32 GRAPHICS TYPE: GDI+DOUBLE-BUFFER\n" );
+      fflush( stdout );
+      one_w32_display_info.drawing_mode = W32_DRAWING_MODE_GDI_BACK_BUFFER;
+    }
+  else
+    {
+      printf( "W32 GRAPHICS TYPE: GDI\n" );
+      fflush( stdout );
+    }
+
   unblock_input ();
 
   return dpyinfo;

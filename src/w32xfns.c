@@ -153,25 +153,40 @@ deselect_palette (struct frame *f, HDC hdc)
 }
 
 /* Get a DC for frame and select palette for drawing; force an update of
-   all frames if palette's mapping changes.  */
+   all frames if palette's mapping changes.
+
+   When using double buffered mode, DCs are stored on the frame data
+   after the first call and are never released.
+*/
+
 HDC
 get_frame_dc (struct frame *f)
 {
-  HDC hdc;
-
   if (f->output_method != output_w32)
     emacs_abort ();
 
   enter_crit ();
-
-  hdc = GetDC (f->output_data.w32->window_desc);
-
-  /* If this gets called during startup before the frame is valid,
-     there is a chance of corrupting random data or crashing. */
-  if (hdc)
-    select_palette (f, hdc);
-
-  return hdc;
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
+    {
+      if (f->output_data.w32->hdc == NULL)
+        {
+          HDC hdc = GetDC (f->output_data.w32->window_desc);
+          /* The window maybe NULL. In that case we get a DC for the full screen, which must be released */
+          if (f->output_data.w32->window_desc)
+            f->output_data.w32->hdc = hdc;
+          return hdc;
+        }
+      return f->output_data.w32->hdc;
+    }
+  else
+    {
+      HDC hdc = GetDC (f->output_data.w32->window_desc);
+      /* If this gets called during startup before the frame is valid,
+         there is a chance of corrupting random data or crashing. */
+      if (hdc)
+        select_palette (f, hdc);
+      return hdc;
+    }
 }
 
 int
@@ -179,9 +194,20 @@ release_frame_dc (struct frame *f, HDC hdc)
 {
   int ret;
 
-  deselect_palette (f, hdc);
-  ret = ReleaseDC (f->output_data.w32->window_desc, hdc);
 
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
+    {
+      ret = 1;
+      if (f->output_data.w32->hdc == NULL)
+        {
+          ret = ReleaseDC(f->output_data.w32->window_desc, hdc);
+        }
+    }
+  else
+    {
+      deselect_palette (f, hdc);
+      ret = ReleaseDC (f->output_data.w32->window_desc, hdc);
+    }
   leave_crit ();
 
   return ret;

@@ -83,7 +83,7 @@ enum w32_drawing_mode
   /* GDI, drawing directly to window, creating a new DC for each
      operation. This is the original mode.*/
   W32_DRAWING_MODE_GDI = 0,
-  W32_DRAWING_MODE_GDI_BACK_BUFFER =1
+  W32_DRAWING_MODE_GDI_BACK_BUFFER = 1
 };
 
 /* For each display (currently only one on w32), we have a structure that
@@ -414,6 +414,9 @@ struct w32_output
      geometry when 'fullscreen' is reset to nil.  */
   WINDOWPLACEMENT normal_placement;
   int prev_fsmode;
+
+  /* The window's HDC when using double buffering. */
+  HDC hdc;
 };
 
 extern struct w32_output w32term_display;
