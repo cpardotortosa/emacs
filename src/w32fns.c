@@ -2357,7 +2357,7 @@ w32_load_cursor (LPCTSTR name)
 static LRESULT CALLBACK w32_wnd_proc (HWND, UINT, WPARAM, LPARAM);
 
 #define INIT_WINDOW_CLASS(WC)			  \
-  (WC).style = CS_HREDRAW | CS_VREDRAW;		  \
+  (WC).style = style;	                 	  \
   (WC).lpfnWndProc = (WNDPROC) w32_wnd_proc;      \
   (WC).cbClsExtra = 0;                            \
   (WC).cbWndExtra = WND_EXTRA_BYTES;              \
@@ -2370,6 +2370,13 @@ static LRESULT CALLBACK w32_wnd_proc (HWND, UINT, WPARAM, LPARAM);
 static BOOL
 w32_init_class (HINSTANCE hinst)
 {
+  UINT style = CS_HREDRAW | CS_VREDRAW;
+
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
+    {
+      style |= CS_OWNDC;
+    }
+
   if (w32_unicode_gui)
     {
       WNDCLASSW  uwc;
