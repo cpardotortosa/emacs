@@ -641,6 +641,24 @@ w32_draw_window_divider (struct window *w, int x0, int x1, int y0, int y1)
   release_frame_dc (f, hdc);
 }
 
+static void
+w32_flip_maybe(struct frame *f)
+{
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
+    {
+      HDC hdc = get_frame_dc(f);
+      GdiFlush();
+      BitBlt( f->output_data.w32->hdc,
+              0, 0, 2000, 2000,
+              f->output_data.w32->back_hdc,
+              0, 0,
+              SRCCOPY );
+      GdiFlush();
+      release_frame_dc (f, hdc);
+    }
+}
+
+
 /* End update of window W.
 
    Draw vertical borders between horizontally adjacent windows, and
@@ -659,20 +677,6 @@ w32_update_window_end (struct window *w, bool cursor_on_p,
                        bool mouse_face_overwritten_p)
 {
 
-  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
-    {
-
-      GdiFlush();
-      struct frame *f = XFRAME(WINDOW_FRAME(w));
-      HDC hdc = get_frame_dc (f);
-      BitBlt (f->output_data.w32->hdc,
-              0, 0, 2000, 2000,
-              f->output_data.w32->back_hdc,
-              0, 0,
-              SRCCOPY);
-      release_frame_dc (f, hdc);
-    }
-
   /* Unhide the caret.  This won't actually show the cursor, unless it
      was visible before the corresponding call to HideCaret in
      w32_update_window_begin.  */
@@ -683,26 +687,7 @@ w32_update_window_end (struct window *w, bool cursor_on_p,
     }
 }
 
-/* Updates back buffer and flushes changes to display.  Called from
-   minibuf read code.  Note that we display the back buffer even if
-   buffer flipping is blocked.  */
-static void
-w32_flip_and_flush (struct frame *f)
-{
-  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
-    {
-      block_input ();
-      HDC hdc = get_frame_dc(f);
-      BitBlt( f->output_data.w32->hdc,
-              0, 0, 2000, 2000,
-              f->output_data.w32->back_hdc,
-              0, 0,
-              SRCCOPY );
-      GdiFlush();
-      release_frame_dc (f, hdc);
-      unblock_input ();
-    }
-}
+
 
 /* End update of frame F.  This function is installed as a hook in
    update_end.  */
@@ -716,20 +701,7 @@ w32_update_end (struct frame *f)
   /* Mouse highlight may be displayed again.  */
   MOUSE_HL_INFO (f)->mouse_face_defer = false;
 
-  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
-    {
-
-      GdiFlush();
-      HDC hdc = get_frame_dc(f);
-      BitBlt( f->output_data.w32->hdc,
-              0, 0, 2000, 2000,
-              f->output_data.w32->back_hdc,
-              0, 0,
-              SRCCOPY );
-      release_frame_dc( f, hdc);
-      update_count--;
-
-    }
+  w32_flip_maybe(f);
 }
 
 
@@ -2841,84 +2813,81 @@ w32_scroll_run (struct window *w, struct run *run)
   struct frame *f = XFRAME (w->frame);
   if ( one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
     {
-      block_input ();
       InvalidateRect( FRAME_W32_WINDOW (f), NULL, FALSE );
-      SET_FRAME_GARBAGED (f);
-      unblock_input ();
     }
   else
     {
 
-    int x, y, width, height, from_y, to_y, bottom_y;
-    HWND hwnd = FRAME_W32_WINDOW (f);
-    HRGN expect_dirty;
+      int x, y, width, height, from_y, to_y, bottom_y;
+      HWND hwnd = FRAME_W32_WINDOW (f);
+      HRGN expect_dirty;
 
-    /* Get frame-relative bounding box of the text display area of W,
-       without mode lines.  Include in this box the left and right
-       fringes of W.  */
-    window_box (w, ANY_AREA, &x, &y, &width, &height);
+      /* Get frame-relative bounding box of the text display area of W,
+         without mode lines.  Include in this box the left and right
+         fringes of W.  */
+      window_box (w, ANY_AREA, &x, &y, &width, &height);
 
-    from_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->current_y);
-    to_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->desired_y);
-    bottom_y = y + height;
+      from_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->current_y);
+      to_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->desired_y);
+      bottom_y = y + height;
 
-    if (to_y < from_y)
+      if (to_y < from_y)
+        {
+          /* Scrolling up.  Make sure we don't copy part of the mode
+             line at the bottom.  */
+          if (from_y + run->height > bottom_y)
+            height = bottom_y - from_y;
+          else
+            height = run->height;
+          expect_dirty = CreateRectRgn (x, y + height, x + width, bottom_y);
+        }
+      else
+        {
+          /* Scrolling down.  Make sure we don't copy over the mode line.
+             at the bottom.  */
+          if (to_y + run->height > bottom_y)
+            height = bottom_y - to_y;
+          else
+            height = run->height;
+          expect_dirty = CreateRectRgn (x, y, x + width, to_y);
+        }
+
+      block_input ();
+
+      /* Cursor off.  Will be switched on again in gui_update_window_end.  */
+      gui_clear_cursor (w);
+
       {
-        /* Scrolling up.  Make sure we don't copy part of the mode
-           line at the bottom.  */
-        if (from_y + run->height > bottom_y)
-          height = bottom_y - from_y;
-        else
-          height = run->height;
-        expect_dirty = CreateRectRgn (x, y + height, x + width, bottom_y);
+        RECT from;
+        RECT to;
+        HRGN dirty = CreateRectRgn (0, 0, 0, 0);
+        HRGN combined = CreateRectRgn (0, 0, 0, 0);
+
+        from.left = to.left = x;
+        from.right = to.right = x + width;
+        from.top = from_y;
+        from.bottom = from_y + height;
+        to.top = y;
+        to.bottom = bottom_y;
+
+        ScrollWindowEx (hwnd, 0, to_y - from_y, &from, &to, dirty,
+                        NULL, SW_INVALIDATE);
+
+        /* Combine this with what we expect to be dirty. This covers the
+           case where not all of the region we expect is actually dirty.  */
+        CombineRgn (combined, dirty, expect_dirty, RGN_OR);
+
+        /* If the dirty region is not what we expected, redraw the entire frame.  */
+        if (!EqualRgn (combined, expect_dirty))
+          SET_FRAME_GARBAGED (f);
+
+        DeleteObject (dirty);
+        DeleteObject (combined);
       }
-    else
-      {
-        /* Scrolling down.  Make sure we don't copy over the mode line.
-           at the bottom.  */
-        if (to_y + run->height > bottom_y)
-          height = bottom_y - to_y;
-        else
-          height = run->height;
-        expect_dirty = CreateRectRgn (x, y, x + width, to_y);
-      }
 
-    block_input ();
-
-    /* Cursor off.  Will be switched on again in gui_update_window_end.  */
-    gui_clear_cursor (w);
-
-    {
-      RECT from;
-      RECT to;
-      HRGN dirty = CreateRectRgn (0, 0, 0, 0);
-      HRGN combined = CreateRectRgn (0, 0, 0, 0);
-
-      from.left = to.left = x;
-      from.right = to.right = x + width;
-      from.top = from_y;
-      from.bottom = from_y + height;
-      to.top = y;
-      to.bottom = bottom_y;
-
-      ScrollWindowEx (hwnd, 0, to_y - from_y, &from, &to, dirty,
-                      NULL, SW_INVALIDATE);
-
-      /* Combine this with what we expect to be dirty. This covers the
-         case where not all of the region we expect is actually dirty.  */
-      CombineRgn (combined, dirty, expect_dirty, RGN_OR);
-
-      /* If the dirty region is not what we expected, redraw the entire frame.  */
-      if (!EqualRgn (combined, expect_dirty))
-        SET_FRAME_GARBAGED (f);
-
-      DeleteObject (dirty);
-      DeleteObject (combined);
+      unblock_input ();
+      DeleteObject (expect_dirty);
     }
-
-    unblock_input ();
-    DeleteObject (expect_dirty);
-  }
 }
 
 
@@ -4904,6 +4873,7 @@ w32_read_socket (struct terminal *terminal,
 				msg.rect.right - msg.rect.left,
 				msg.rect.bottom - msg.rect.top);
 		  w32_clear_under_internal_border (f);
+                  w32_flip_maybe(f);
 		}
 	    }
 	  break;
@@ -7255,7 +7225,7 @@ static struct redisplay_interface w32_redisplay_interface =
   w32_after_update_window_line,
   w32_update_window_begin,
   w32_update_window_end,
-  w32_flip_and_flush,
+  0,
   gui_clear_window_mouse_face,
   gui_get_glyph_overhangs,
   gui_fix_overlapping_area,
