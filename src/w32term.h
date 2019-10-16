@@ -417,6 +417,10 @@ struct w32_output
 
   /* The window's HDC when using double buffering. */
   HDC hdc;
+  /* The back buffer hdc  */
+  HDC back_hdc;
+  /* And the back bitmap */
+  HBITMAP back_bitmap;
 };
 
 extern struct w32_output w32term_display;

@@ -61,7 +61,8 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #if 0	/* TODO: stipple */
 #include "bitmaps/gray.xbm"
 #endif
-
+
+
 /* Fringe bitmaps.  */
 
 static int max_fringe_bmp = 0;
@@ -87,7 +88,8 @@ extern unsigned int msh_mousewheel;
 extern int w32_codepage_for_font (char *fontname);
 extern HCURSOR w32_load_cursor (LPCTSTR name);
 
-
+
+
 /* This is display since w32 does not support multiple ones.  */
 struct w32_display_info one_w32_display_info;
 struct w32_display_info *x_display_list;
@@ -209,7 +211,8 @@ static void w32fullscreen_hook (struct frame *);
 static void w32_check_font (struct frame *, struct font *);
 #endif
 
-
+
+
 /***********************************************************************
 			      Debugging
  ***********************************************************************/
@@ -240,7 +243,8 @@ record_event (char *locus, int type)
 }
 
 #endif /* 0 */
-
+
+
 
 static void
 XChangeGC (void *ignore, Emacs_GC *gc, unsigned long mask,
@@ -526,7 +530,8 @@ w32_display_pixel_width (struct w32_display_info *dpyinfo)
   return pixels;
 }
 
-
+
+
 /***********************************************************************
 		    Starting and ending an update
  ***********************************************************************/
@@ -555,7 +560,6 @@ w32_update_begin (struct frame *f)
 
 
 /* Start update of window W.  */
-
 static void
 w32_update_window_begin (struct window *w)
 {
@@ -654,6 +658,21 @@ static void
 w32_update_window_end (struct window *w, bool cursor_on_p,
                        bool mouse_face_overwritten_p)
 {
+
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
+    {
+
+      GdiFlush();
+      struct frame *f = XFRAME(WINDOW_FRAME(w));
+      HDC hdc = get_frame_dc (f);
+      BitBlt (f->output_data.w32->hdc,
+              0, 0, 2000, 2000,
+              f->output_data.w32->back_hdc,
+              0, 0,
+              SRCCOPY);
+      release_frame_dc (f, hdc);
+    }
+
   /* Unhide the caret.  This won't actually show the cursor, unless it
      was visible before the corresponding call to HideCaret in
      w32_update_window_begin.  */
@@ -664,6 +683,26 @@ w32_update_window_end (struct window *w, bool cursor_on_p,
     }
 }
 
+/* Updates back buffer and flushes changes to display.  Called from
+   minibuf read code.  Note that we display the back buffer even if
+   buffer flipping is blocked.  */
+static void
+w32_flip_and_flush (struct frame *f)
+{
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
+    {
+      block_input ();
+      HDC hdc = get_frame_dc(f);
+      BitBlt( f->output_data.w32->hdc,
+              0, 0, 2000, 2000,
+              f->output_data.w32->back_hdc,
+              0, 0,
+              SRCCOPY );
+      GdiFlush();
+      release_frame_dc (f, hdc);
+      unblock_input ();
+    }
+}
 
 /* End update of frame F.  This function is installed as a hook in
    update_end.  */
@@ -676,6 +715,21 @@ w32_update_end (struct frame *f)
 
   /* Mouse highlight may be displayed again.  */
   MOUSE_HL_INFO (f)->mouse_face_defer = false;
+
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
+    {
+
+      GdiFlush();
+      HDC hdc = get_frame_dc(f);
+      BitBlt( f->output_data.w32->hdc,
+              0, 0, 2000, 2000,
+              f->output_data.w32->back_hdc,
+              0, 0,
+              SRCCOPY );
+      release_frame_dc( f, hdc);
+      update_count--;
+
+    }
 }
 
 
@@ -2785,75 +2839,86 @@ static void
 w32_scroll_run (struct window *w, struct run *run)
 {
   struct frame *f = XFRAME (w->frame);
-  int x, y, width, height, from_y, to_y, bottom_y;
-  HWND hwnd = FRAME_W32_WINDOW (f);
-  HRGN expect_dirty;
-
-  /* Get frame-relative bounding box of the text display area of W,
-     without mode lines.  Include in this box the left and right
-     fringes of W.  */
-  window_box (w, ANY_AREA, &x, &y, &width, &height);
-
-  from_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->current_y);
-  to_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->desired_y);
-  bottom_y = y + height;
-
-  if (to_y < from_y)
+  if ( one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
     {
-      /* Scrolling up.  Make sure we don't copy part of the mode
-	 line at the bottom.  */
-      if (from_y + run->height > bottom_y)
-	height = bottom_y - from_y;
-      else
-	height = run->height;
-      expect_dirty = CreateRectRgn (x, y + height, x + width, bottom_y);
+      block_input ();
+      InvalidateRect( FRAME_W32_WINDOW (f), NULL, FALSE );
+      SET_FRAME_GARBAGED (f);
+      unblock_input ();
     }
   else
     {
-      /* Scrolling down.  Make sure we don't copy over the mode line.
-	 at the bottom.  */
-      if (to_y + run->height > bottom_y)
-	height = bottom_y - to_y;
-      else
-	height = run->height;
-      expect_dirty = CreateRectRgn (x, y, x + width, to_y);
+
+    int x, y, width, height, from_y, to_y, bottom_y;
+    HWND hwnd = FRAME_W32_WINDOW (f);
+    HRGN expect_dirty;
+
+    /* Get frame-relative bounding box of the text display area of W,
+       without mode lines.  Include in this box the left and right
+       fringes of W.  */
+    window_box (w, ANY_AREA, &x, &y, &width, &height);
+
+    from_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->current_y);
+    to_y = WINDOW_TO_FRAME_PIXEL_Y (w, run->desired_y);
+    bottom_y = y + height;
+
+    if (to_y < from_y)
+      {
+        /* Scrolling up.  Make sure we don't copy part of the mode
+           line at the bottom.  */
+        if (from_y + run->height > bottom_y)
+          height = bottom_y - from_y;
+        else
+          height = run->height;
+        expect_dirty = CreateRectRgn (x, y + height, x + width, bottom_y);
+      }
+    else
+      {
+        /* Scrolling down.  Make sure we don't copy over the mode line.
+           at the bottom.  */
+        if (to_y + run->height > bottom_y)
+          height = bottom_y - to_y;
+        else
+          height = run->height;
+        expect_dirty = CreateRectRgn (x, y, x + width, to_y);
+      }
+
+    block_input ();
+
+    /* Cursor off.  Will be switched on again in gui_update_window_end.  */
+    gui_clear_cursor (w);
+
+    {
+      RECT from;
+      RECT to;
+      HRGN dirty = CreateRectRgn (0, 0, 0, 0);
+      HRGN combined = CreateRectRgn (0, 0, 0, 0);
+
+      from.left = to.left = x;
+      from.right = to.right = x + width;
+      from.top = from_y;
+      from.bottom = from_y + height;
+      to.top = y;
+      to.bottom = bottom_y;
+
+      ScrollWindowEx (hwnd, 0, to_y - from_y, &from, &to, dirty,
+                      NULL, SW_INVALIDATE);
+
+      /* Combine this with what we expect to be dirty. This covers the
+         case where not all of the region we expect is actually dirty.  */
+      CombineRgn (combined, dirty, expect_dirty, RGN_OR);
+
+      /* If the dirty region is not what we expected, redraw the entire frame.  */
+      if (!EqualRgn (combined, expect_dirty))
+        SET_FRAME_GARBAGED (f);
+
+      DeleteObject (dirty);
+      DeleteObject (combined);
     }
 
-  block_input ();
-
-  /* Cursor off.  Will be switched on again in gui_update_window_end.  */
-  gui_clear_cursor (w);
-
-  {
-    RECT from;
-    RECT to;
-    HRGN dirty = CreateRectRgn (0, 0, 0, 0);
-    HRGN combined = CreateRectRgn (0, 0, 0, 0);
-
-    from.left = to.left = x;
-    from.right = to.right = x + width;
-    from.top = from_y;
-    from.bottom = from_y + height;
-    to.top = y;
-    to.bottom = bottom_y;
-
-    ScrollWindowEx (hwnd, 0, to_y - from_y, &from, &to, dirty,
-		    NULL, SW_INVALIDATE);
-
-    /* Combine this with what we expect to be dirty. This covers the
-       case where not all of the region we expect is actually dirty.  */
-    CombineRgn (combined, dirty, expect_dirty, RGN_OR);
-
-    /* If the dirty region is not what we expected, redraw the entire frame.  */
-    if (!EqualRgn (combined, expect_dirty))
-      SET_FRAME_GARBAGED (f);
-
-    DeleteObject (dirty);
-    DeleteObject (combined);
+    unblock_input ();
+    DeleteObject (expect_dirty);
   }
-
-  unblock_input ();
-  DeleteObject (expect_dirty);
 }
 
 
@@ -7177,6 +7242,8 @@ w32_make_rdb (char *xrm_option)
 
 extern frame_parm_handler w32_frame_parm_handlers[];
 
+
+
 static struct redisplay_interface w32_redisplay_interface =
 {
   w32_frame_parm_handlers,
@@ -7188,7 +7255,7 @@ static struct redisplay_interface w32_redisplay_interface =
   w32_after_update_window_line,
   w32_update_window_begin,
   w32_update_window_end,
-  0, /* flush_display */
+  w32_flip_and_flush,
   gui_clear_window_mouse_face,
   gui_get_glyph_overhangs,
   gui_fix_overlapping_area,
