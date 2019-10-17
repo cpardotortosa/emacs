@@ -80,11 +80,8 @@ extern void w32_fullscreen_rect (HWND hwnd, int fsmode, RECT normal,
 /* There are two methods for painting to a window. One is chosen at startup. */
 enum w32_drawing_mode
 {
-  /* GDI, drawing directly to window, creating a new DC for each
-     operation. This is the original mode.*/
   W32_DRAWING_MODE_GDI             = 0,
-  W32_DRAWING_MODE_GDI_BACK_BUFFER = 1,
-  W32_DRAWING_MODE_DIRECT2D        = 2
+  W32_DRAWING_MODE_DIRECT2D        = 1
 };
 
 /* For each display (currently only one on w32), we have a structure that

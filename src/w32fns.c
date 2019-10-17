@@ -2372,11 +2372,6 @@ w32_init_class (HINSTANCE hinst)
 {
   UINT style = CS_HREDRAW | CS_VREDRAW;
 
-  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
-    {
-      style |= CS_OWNDC;
-    }
-
   if (w32_unicode_gui)
     {
       WNDCLASSW  uwc;

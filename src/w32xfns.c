@@ -184,36 +184,7 @@ get_frame_dc__ (struct frame *f)
     emacs_abort ();
 
   enter_crit ();
-  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
-    {
-      if (f->output_data.w32->hdc == NULL)
-        {
-          HDC hdc = GetDC (f->output_data.w32->window_desc);
-          /* The window may be NULL. In that case we get a DC for the full screen, which must be released */
-          if (f->output_data.w32->window_desc)
-            {
-              f->output_data.w32->hdc = hdc;
-              if (hdc)
-                {
-                  /* Initialize the backing bitmap/hdc */
-                  f->output_data.w32->back_hdc = CreateCompatibleDC(hdc);
-                  f->output_data.w32->back_bitmap = CreateCompatibleBitmap( hdc, 2000, 2000 );
-                  SelectObject( f->output_data.w32->back_hdc, f->output_data.w32->back_bitmap );
-                }
-              else
-                {
-                  return NULL;
-                }
-            }
-          else
-            {
-              // DC for NULL window.
-              return hdc;
-            }
-        }
-      return f->output_data.w32->back_hdc;
-    }
-  else if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D )
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D )
     {
       if (f->output_data.w32->hdc == NULL)
         {
@@ -311,16 +282,7 @@ int
 release_frame_dc__ (struct frame *f, HDC hdc)
 {
   int ret;
-  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
-    {
-      ret = 1;
-      // This dc was created when there was still no window. Have to release it.
-      if (f->output_data.w32->window_desc == NULL)
-        {
-          ret = ReleaseDC(f->output_data.w32->window_desc, hdc);
-        }
-    }
-  else if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D )
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D )
     {
       ret = 1;
       // This dc was created when there was still no window. Have to release it.
