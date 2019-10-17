@@ -384,7 +384,7 @@ If FRAME is omitted or nil, it defaults to the selected frame.  */)
 
 DEFUN ("window-minibuffer-p", Fwindow_minibuffer_p,
        Swindow_minibuffer_p, 0, 1, 0,
-       doc: /* Return non-nil if WINDOW is a minibuffer window.
+       doc: /* Return t if WINDOW is a minibuffer window.
 WINDOW must be a valid window and defaults to the selected one.  */)
   (Lisp_Object window)
 {
@@ -7129,10 +7129,11 @@ the return value is nil.  Otherwise the value is t.  */)
 	if (NILP (leaf_windows[i]->contents))
 	  free_window_matrices (leaf_windows[i]);
 
-      /* Allow set_window_size_hook again and apply frame size changes
-	 if needed.  */
+      /* Allow set_window_size_hook again and resize frame's windows
+	 if necessary.  But change frame size only to preserve window
+	 minimum sizes.  */
       f->can_set_window_size = true;
-      adjust_frame_size (f, -1, -1, 1, false, Qset_window_configuration);
+      adjust_frame_size (f, -1, -1, 4, false, Qset_window_configuration);
 
       adjust_frame_glyphs (f);
       unblock_input ();
