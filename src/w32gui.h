@@ -20,6 +20,8 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 #define EMACS_W32GUI_H
 #include <windows.h>
 
+#include "w32_d2d.h"
+
 #include "systime.h" /* for Time */
 
 /* FIXME: old local memory management for menus.  */

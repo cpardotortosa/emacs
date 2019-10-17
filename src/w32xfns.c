@@ -159,9 +159,27 @@ deselect_palette (struct frame *f, HDC hdc)
    after the first call and are never released.
 */
 
-HDC
-get_frame_dc (struct frame *f)
+HDC get_frame_dc1(struct frame * f, const char *caller_name)
 {
+
+  printf( "Caller: %s\n", caller_name );
+  if (!strcmp( caller_name, "draw_relief_rect" ))
+    printf( "!!!!!!!!!!!!!!!!!!!" );
+  return get_frame_dc__( f );
+}
+
+int release_frame_dc1(struct frame * f, HDC hDC)
+{
+  return release_frame_dc__( f, hDC );
+}
+
+
+HDC
+get_frame_dc__ (struct frame *f)
+{
+  printf( "get_frame_dc %p\n", f );
+  fflush(stdout);
+
   if (f->output_method != output_w32)
     emacs_abort ();
 
@@ -195,6 +213,88 @@ get_frame_dc (struct frame *f)
         }
       return f->output_data.w32->back_hdc;
     }
+  else if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D )
+    {
+      if (f->output_data.w32->hdc == NULL)
+        {
+          if (f->output_data.w32->window_desc)
+            {
+              if ( f->output_data.w32->d2d_render_target == NULL )
+                {
+                  /* Initialize Direct2D */
+                  dummy_D2D1_RENDER_TARGET_PROPERTIES props =
+                    {
+                     dummy_D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                     { dummy_DXGI_FORMAT_B8G8R8A8_UNORM, dummy_D2D1_ALPHA_MODE_PREMULTIPLIED },
+                     0.0f, 0.0f,
+                     dummy_D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE,
+                     dummy_D2D1_FEATURE_LEVEL_DEFAULT
+                    };
+
+
+                  RECT rc;
+                  GetClientRect( f->output_data.w32->window_desc, &rc );
+
+                  dummy_D2D1_HWND_RENDER_TARGET_PROPERTIES props2 =
+                    {
+                     f->output_data.w32->window_desc,
+                     { rc.right - rc.left,    rc.bottom - rc.top },
+                     dummy_D2D1_PRESENT_OPTIONS_RETAIN_CONTENTS
+                    };
+
+
+                  HRESULT hr = dummy_ID2D1Factory_CreateHwndRenderTarget(one_w32_display_info.d2d_factory,
+                                                                         &props,
+                                                                         &props2,
+                                                                         (dummy_ID2D1HwndRenderTarget**)&f->output_data.w32->d2d_render_target);
+                  if(FAILED(hr)) {
+                    printf( "CREATEDCRENDERTRGET %ld %p", hr, f->output_data.w32->window_desc );
+                    fflush(stdout);
+                    abort();
+                  }
+                }
+
+
+
+              HRESULT hr = dummy_ID2D1HwndRenderTarget_QueryInterface( f->output_data.w32->d2d_render_target,
+                                                               &dummy_IID_ID2D1GdiInteropRenderTarget,
+                                                               (void**)&f->output_data.w32->d2d_gdi_interop_render_target );
+              if(FAILED(hr)) {
+                printf( "Query interface failed" );
+                fflush(stdout);
+                abort();
+              }
+
+              dummy_ID2D1RenderTarget_BeginDraw(f->output_data.w32->d2d_render_target);
+
+              HDC hdc;
+
+              hr = dummy_ID2D1GdiInteropRenderTarget_GetDC( f->output_data.w32->d2d_gdi_interop_render_target,
+                                                            dummy_D2D1_DC_INITIALIZE_MODE_COPY,
+                                                            &hdc );
+              if(FAILED(hr)) {
+                printf( "GetDC Failed" );
+                fflush(stdout);
+                abort();
+              }
+
+              f->output_data.w32->hdc = hdc;
+              return hdc;
+
+              /* f->output_data.w32->back_hdc = CreateCompatibleDC(hdc); */
+              /* f->output_data.w32->back_bitmap = CreateCompatibleBitmap( hdc, 2000, 2000 ); */
+              /* SelectObject( f->output_data.w32->back_hdc, f->output_data.w32->back_bitmap ); */
+            }
+          else
+            {
+              // DC for NULL window.
+              HDC hdc = GetDC (f->output_data.w32->window_desc);
+              return hdc;
+            }
+
+        }
+      return f->output_data.w32->hdc;
+    }
   else
     {
       HDC hdc = GetDC (f->output_data.w32->window_desc);
@@ -208,15 +308,23 @@ get_frame_dc (struct frame *f)
 
 
 int
-release_frame_dc (struct frame *f, HDC hdc)
+release_frame_dc__ (struct frame *f, HDC hdc)
 {
   int ret;
-
   if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
     {
       ret = 1;
       // This dc was created when there was still no window. Have to release it.
-      if (f->output_data.w32->hdc == NULL)
+      if (f->output_data.w32->window_desc == NULL)
+        {
+          ret = ReleaseDC(f->output_data.w32->window_desc, hdc);
+        }
+    }
+  else if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D )
+    {
+      ret = 1;
+      // This dc was created when there was still no window. Have to release it.
+      if (f->output_data.w32->window_desc == NULL)
         {
           ret = ReleaseDC(f->output_data.w32->window_desc, hdc);
         }

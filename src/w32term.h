@@ -82,8 +82,9 @@ enum w32_drawing_mode
 {
   /* GDI, drawing directly to window, creating a new DC for each
      operation. This is the original mode.*/
-  W32_DRAWING_MODE_GDI = 0,
-  W32_DRAWING_MODE_GDI_BACK_BUFFER = 1
+  W32_DRAWING_MODE_GDI             = 0,
+  W32_DRAWING_MODE_GDI_BACK_BUFFER = 1,
+  W32_DRAWING_MODE_DIRECT2D        = 2
 };
 
 /* For each display (currently only one on w32), we have a structure that
@@ -228,6 +229,12 @@ struct w32_display_info
 
   /* Drawing method */
   enum w32_drawing_mode drawing_mode;
+
+  /* Direct2D Factory */
+  dummy_ID2D1Factory* d2d_factory;
+
+
+
 };
 
 /* This is a chain of structures for all the displays currently in use.  */
@@ -421,6 +428,9 @@ struct w32_output
   HDC back_hdc;
   /* And the back bitmap */
   HBITMAP back_bitmap;
+
+  dummy_ID2D1RenderTarget *d2d_render_target;
+  dummy_ID2D1GdiInteropRenderTarget *d2d_gdi_interop_render_target;
 };
 
 extern struct w32_output w32term_display;
@@ -728,8 +738,14 @@ extern void signal_quit (void);
 
 extern void select_palette (struct frame * f, HDC hdc);
 extern void deselect_palette (struct frame * f, HDC hdc);
-extern HDC get_frame_dc (struct frame * f);
-extern int release_frame_dc (struct frame * f, HDC hDC);
+
+extern HDC get_frame_dc__ (struct frame * f);
+extern int release_frame_dc__ (struct frame * f, HDC hDC);
+extern HDC get_frame_dc1(struct frame * f, const char *caller_name);
+extern int release_frame_dc1(struct frame * f, HDC hDC);
+
+#define get_frame_dc(f) get_frame_dc1((f), __func__ )
+#define release_frame_dc(f,hdc) release_frame_dc1((f),(hdc) )
 
 extern int drain_message_queue (void);
 

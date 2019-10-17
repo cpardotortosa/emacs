@@ -644,6 +644,8 @@ w32_draw_window_divider (struct window *w, int x0, int x1, int y0, int y1)
 static void
 w32_flip_maybe(struct frame *f)
 {
+  printf( "flip %p\n", f );
+  fflush( stdout );
   if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER)
     {
       HDC hdc = get_frame_dc(f);
@@ -655,6 +657,22 @@ w32_flip_maybe(struct frame *f)
               SRCCOPY );
       GdiFlush();
       release_frame_dc (f, hdc);
+    }
+  if (one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D)
+    {
+      // Just for the lock. Maybe just lock manually (enter_crit())
+      HDC hdc = get_frame_dc(f);
+
+      UINT64 tag1, tag2;
+
+       dummy_ID2D1GdiInteropRenderTarget_ReleaseDC( f->output_data.w32->d2d_gdi_interop_render_target, NULL );
+       dummy_ID2D1RenderTarget_EndDraw( f->output_data.w32->d2d_render_target, &tag1, &tag2 );
+
+       dummy_ID2D1GdiInteropRenderTarget_Release(f->output_data.w32->d2d_gdi_interop_render_target);
+       f->output_data.w32->hdc = NULL;
+
+      // Passing a released DC, but thats ok, won't be touched.
+      release_frame_dc(f, hdc);
     }
 }
 
@@ -2811,7 +2829,8 @@ static void
 w32_scroll_run (struct window *w, struct run *run)
 {
   struct frame *f = XFRAME (w->frame);
-  if ( one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER )
+  if ( one_w32_display_info.drawing_mode == W32_DRAWING_MODE_GDI_BACK_BUFFER ||
+       one_w32_display_info.drawing_mode == W32_DRAWING_MODE_DIRECT2D )
     {
       InvalidateRect( FRAME_W32_WINDOW (f), NULL, FALSE );
     }
@@ -7401,9 +7420,38 @@ w32_term_init (Lisp_Object display_name, char *xrm_option, char *resource_name)
   one_w32_display_info.drawing_mode = W32_DRAWING_MODE_GDI;
   if (w32_major_version >= 10 && !getenv("W32_EMACS_FORCE_GDI"))
     {
-      printf( "W32 GRAPHICS TYPE: GDI+DOUBLE-BUFFER\n" );
-      fflush( stdout );
-      one_w32_display_info.drawing_mode = W32_DRAWING_MODE_GDI_BACK_BUFFER;
+      if (1)
+        {
+          printf( "W32 GRAPHICS TYPE: DIRECT2D\n" );
+          fflush( stdout );
+          one_w32_display_info.drawing_mode = W32_DRAWING_MODE_DIRECT2D;
+
+          static const dummy_D2D1_FACTORY_OPTIONS factory_options =
+            { dummy_D2D1_DEBUG_LEVEL_NONE };
+          HRESULT (WINAPI* fn_D2D1CreateFactory)(dummy_D2D1_FACTORY_TYPE, REFIID, const dummy_D2D1_FACTORY_OPTIONS*, void**);
+          HRESULT hr;
+
+          HMODULE d2d_dll = LoadLibrary( "d2d1.dll" );
+          fn_D2D1CreateFactory = (void*)GetProcAddress(d2d_dll, "D2D1CreateFactory");
+
+          hr = fn_D2D1CreateFactory(dummy_D2D1_FACTORY_TYPE_MULTI_THREADED,
+                                    &dummy_IID_ID2D1Factory, &factory_options, (void**) &one_w32_display_info.d2d_factory);
+
+          if (FAILED(hr))
+            {
+              fprintf( stderr, "Error initializing Direct2D: %ld\n", hr );
+              abort();
+            }
+
+          printf( "Direct2D factory initialized\n" );
+          fflush( stdout );
+        }
+      else
+        {
+          printf( "W32 GRAPHICS TYPE: GDI+DOUBLE-BUFFER\n" );
+          fflush( stdout );
+          one_w32_display_info.drawing_mode = W32_DRAWING_MODE_GDI_BACK_BUFFER;
+        }
     }
   else
     {
